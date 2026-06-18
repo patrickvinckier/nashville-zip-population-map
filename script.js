@@ -239,13 +239,14 @@ function renderMarker(z, maxPct) {
         fillColor:   color,
         fillOpacity: 0,        // transparent by default; fills on hover
       }),
-    });
-    // Reveal population-gradient fill on hover, hide on mouseout
-    layer.on('mouseover', () => {
-      if (selectedZip !== z.zip) layer.setStyle({ fillOpacity: 0.55 });
-    });
-    layer.on('mouseout', () => {
-      if (selectedZip !== z.zip) layer.setStyle({ fillOpacity: 0 });
+      onEachFeature: (_, featureLayer) => {
+        featureLayer.on('mouseover', () => {
+          if (selectedZip !== z.zip) layer.setStyle({ fillOpacity: 0.55 });
+        });
+        featureLayer.on('mouseout', () => {
+          if (selectedZip !== z.zip) layer.setStyle({ fillOpacity: 0 });
+        });
+      },
     });
     layer.bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.95 });
     layer.bindPopup(popup);
