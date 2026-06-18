@@ -232,14 +232,20 @@ function renderMarker(z, maxPct) {
 
   if (z.geometry) {
     // ---- POLYGON / MULTIPOLYGON rendering (real ZCTA boundary data) ----
-    // L.geoJSON handles both Polygon and MultiPolygon natively
     layer = L.geoJSON({ type: 'Feature', geometry: z.geometry, properties: {} }, {
       style: () => ({
-        color:       '#1E293B',
-        weight:      1,
+        color:       '#1A4DFF',
+        weight:      1.5,
         fillColor:   color,
-        fillOpacity: 0.70,
+        fillOpacity: 0,        // transparent by default; fills on hover
       }),
+    });
+    // Reveal population-gradient fill on hover, hide on mouseout
+    layer.on('mouseover', () => {
+      if (selectedZip !== z.zip) layer.setStyle({ fillOpacity: 0.55 });
+    });
+    layer.on('mouseout', () => {
+      if (selectedZip !== z.zip) layer.setStyle({ fillOpacity: 0 });
     });
     layer.bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.95 });
     layer.bindPopup(popup);
@@ -284,8 +290,8 @@ function selectZip(zip, flyToMarker) {
     if (!layer.setStyle) return;
     const isPolygon = !!(allZips.find(d => d.zip === z) || {}).geometry;
     layer.setStyle(isSelected
-      ? { weight: isPolygon ? 2.5 : 3,   color: '#06D6A0', fillOpacity: isPolygon ? 0.88 : 0.92 }
-      : { weight: isPolygon ? 1   : 1.5, color: isPolygon ? '#1E293B' : '#FFFFFF', fillOpacity: isPolygon ? 0.70 : 0.82 }
+      ? { weight: isPolygon ? 2.5 : 3,   color: '#06D6A0', fillOpacity: isPolygon ? 0.65 : 0.92 }
+      : { weight: isPolygon ? 1.5 : 1.5, color: isPolygon ? '#1A4DFF' : '#FFFFFF', fillOpacity: isPolygon ? 0    : 0.82 }
     );
     if (isSelected && layer.bringToFront) layer.bringToFront();
   });
