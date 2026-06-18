@@ -229,6 +229,31 @@ html, body {
 
 #map { width: 100%; height: 100%; }
 
+/* Multi-select button (Leaflet topright control) */
+.multi-select-btn {
+  background: var(--white);
+  border: 2px solid var(--cobalt);
+  color: var(--cobalt);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 8px rgba(26,77,255,0.18);
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+}
+.multi-select-btn:hover {
+  box-shadow: 0 3px 14px rgba(26,77,255,0.3);
+}
+.multi-select-btn.active {
+  background: var(--cobalt);
+  color: var(--white);
+  box-shadow: 0 3px 14px rgba(26,77,255,0.4);
+}
+
 /* Map legend */
 .map-legend {
   position: absolute;

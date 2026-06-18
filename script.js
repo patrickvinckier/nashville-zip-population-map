@@ -61,6 +61,10 @@ let radiusCircle;    // the dashed boundary ring on the map
 let zipPolygonLayer; // single L.geoJSON for ALL polygon ZIPs (clean shared borders)
 const layers = {};   // zip string → individual Leaflet layer (for select/style)
 
+// ---- Multi-select mode ----
+let multiSelectMode = false;
+let multiSelected   = new Set(); // zip strings currently selected in multi-select mode
+
 // ---- Boot: fetch data, then initialize ----
 
 /**
@@ -139,8 +143,21 @@ function initMap() {
     maxZoom: 19,
   }).addTo(map);
 
-  // Click on empty map area → deselect current ZIP
-  map.on('click', () => deselectZip());
+  // Click on empty map area → deselect (ignored in multi-select mode)
+  map.on('click', () => { if (!multiSelectMode) deselectZip(); });
+
+  // "Select Multiple" floating button (top-right of map)
+  const msControl = L.control({ position: 'topright' });
+  msControl.onAdd = () => {
+    const btn = L.DomUtil.create('button', 'multi-select-btn');
+    btn.id = 'multi-select-btn';
+    btn.textContent = 'Select Multiple';
+    L.DomEvent.disableClickPropagation(btn);
+    L.DomEvent.disableScrollPropagation(btn);
+    btn.addEventListener('click', toggleMultiSelect);
+    return btn;
+  };
+  msControl.addTo(map);
 
   // Downtown Nashville pin
   L.marker(NASHVILLE_CENTER, {
@@ -237,7 +254,9 @@ function rebuildMapLayers(maxPct) {
         fl.on('mouseout',  () => { if (selectedZip !== zip) fl.setStyle({ fillOpacity: 0 }); });
         fl.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
-          if (selectedZip === zip) deselectZip(); else selectZip(zip, false);
+          if (multiSelectMode) toggleMultiSelectedZip(zip);
+          else if (selectedZip === zip) deselectZip();
+          else selectZip(zip, false);
         });
         fl.bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.95 });
         fl.bindPopup(buildPopup(z));
@@ -257,7 +276,9 @@ function rebuildMapLayers(maxPct) {
       .bindPopup(buildPopup(z));
     layer.on('click', (e) => {
       L.DomEvent.stopPropagation(e);
-      if (selectedZip === z.zip) deselectZip(); else selectZip(z.zip, false);
+      if (multiSelectMode) toggleMultiSelectedZip(z.zip);
+      else if (selectedZip === z.zip) deselectZip();
+      else selectZip(z.zip, false);
     });
     layer.addTo(map);
     layers[z.zip] = layer;
@@ -292,6 +313,57 @@ function deselectZip() {
     );
   });
   document.querySelectorAll('#tbody tr').forEach(tr => tr.classList.remove('active'));
+}
+
+// ---- Multi-select mode toggle ----
+function toggleMultiSelect() {
+  multiSelectMode = !multiSelectMode;
+  const btn = document.getElementById('multi-select-btn');
+  btn.classList.toggle('active', multiSelectMode);
+
+  if (multiSelectMode) {
+    // Entering: clear normal selection first
+    deselectZip();
+    multiSelected.clear();
+  } else {
+    // Exiting: reset all layer styles and restore full radius view
+    multiSelected.clear();
+    applyRadius(maxRadius);
+  }
+  renderTable();
+}
+
+// ---- Toggle one ZIP in/out of the multi-selection ----
+function toggleMultiSelectedZip(zip) {
+  const layer = layers[zip];
+  const isPolygon = !!(allZips.find(d => d.zip === zip) || {}).geometry;
+
+  if (multiSelected.has(zip)) {
+    multiSelected.delete(zip);
+    if (layer && layer.setStyle) {
+      layer.setStyle(isPolygon
+        ? { weight: 1,   color: '#1A4DFF', fillOpacity: 0 }
+        : { weight: 1.5, color: '#FFFFFF',  fillOpacity: 0.82 });
+    }
+  } else {
+    multiSelected.add(zip);
+    if (layer && layer.setStyle) {
+      layer.setStyle(isPolygon
+        ? { weight: 2.5, color: '#06D6A0', fillOpacity: 0.65 }
+        : { weight: 3,   color: '#06D6A0', fillOpacity: 0.92 });
+      if (layer.bringToFront) layer.bringToFront();
+    }
+  }
+
+  // Update stats and table to reflect current selection
+  const selZips = filtered.filter(z => multiSelected.has(z.zip));
+  const totalPop = selZips.reduce((s, z) => s + z.population, 0);
+  document.getElementById('stat-count').textContent = multiSelected.size || '—';
+  document.getElementById('stat-count-lbl').textContent = multiSelected.size ? 'Selected' : 'ZIP Codes';
+  document.getElementById('stat-pop').textContent = multiSelected.size
+    ? (totalPop >= 1_000_000 ? (totalPop / 1_000_000).toFixed(2) + 'M' : fmt(totalPop))
+    : '—';
+  renderTable();
 }
 
 // ---- Selection: sync map highlight + list row ----
@@ -334,14 +406,27 @@ function renderTable() {
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = '';
 
-  // Apply text search filter
+  // In multi-select mode show only selected ZIPs, otherwise apply search filter
   const q = searchQuery.toLowerCase();
-  let rows = filtered.filter(z => {
-    if (!q) return true;
-    return z.zip.includes(q) ||
-           z.city.toLowerCase().includes(q) ||
-           z.county.toLowerCase().includes(q);
-  });
+  let rows;
+  if (multiSelectMode) {
+    rows = filtered.filter(z => multiSelected.has(z.zip));
+  } else {
+    rows = filtered.filter(z => {
+      if (!q) return true;
+      return z.zip.includes(q) ||
+             z.city.toLowerCase().includes(q) ||
+             z.county.toLowerCase().includes(q);
+    });
+  }
+
+  // Recalculate display percentages relative to the selected subset
+  let pctMap = null;
+  if (multiSelectMode && rows.length) {
+    const selPop = rows.reduce((s, z) => s + z.population, 0);
+    pctMap = {};
+    rows.forEach(z => { pctMap[z.zip] = selPop > 0 ? z.population / selPop * 100 : 0; });
+  }
 
   // Sort
   rows.sort((a, b) => {
@@ -354,15 +439,16 @@ function renderTable() {
   const countEl = document.getElementById('search-count');
   countEl.textContent = q ? `${rows.length} of ${filtered.length}` : '';
 
-  const maxRowPct = rows.length ? Math.max(...rows.map(r => r.currentPct), 0.0001) : 0.0001;
+  const maxRowPct = rows.length ? Math.max(...rows.map(r => pctMap ? pctMap[r.zip] : r.currentPct), 0.0001) : 0.0001;
 
   // Build rows
   rows.forEach(z => {
     const tr = document.createElement('tr');
     tr.dataset.zip = z.zip;
-    if (z.zip === selectedZip) tr.classList.add('active');
+    const displayPct = pctMap ? pctMap[z.zip] : z.currentPct;
+    if (multiSelectMode ? multiSelected.has(z.zip) : z.zip === selectedZip) tr.classList.add('active');
 
-    const barPct = ((z.currentPct / maxRowPct) * 100).toFixed(0);
+    const barPct = ((displayPct / maxRowPct) * 100).toFixed(0);
     tr.innerHTML = `
       <td class="col-zip">${z.zip}</td>
       <td>${z.city}</td>
@@ -371,15 +457,17 @@ function renderTable() {
       <td class="col-pop">${fmt(z.population)}</td>
       <td class="col-pct">
         <span class="pct-wrap">
-          ${z.currentPct.toFixed(2)}%
+          ${displayPct.toFixed(2)}%
           <span class="mini-bar-bg"><span class="mini-bar-fill" style="width:${barPct}%"></span></span>
         </span>
       </td>
     `;
 
-    // Click list row → fly to ZIP, or deselect if already selected
+    // Click list row → toggle multi-select, or normal fly/deselect
     tr.addEventListener('click', () => {
-      if (selectedZip === z.zip) deselectZip(); else selectZip(z.zip, true);
+      if (multiSelectMode) toggleMultiSelectedZip(z.zip);
+      else if (selectedZip === z.zip) deselectZip();
+      else selectZip(z.zip, true);
     });
     tbody.appendChild(tr);
   });
