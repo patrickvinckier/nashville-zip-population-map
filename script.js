@@ -74,9 +74,24 @@ const layers = {}; // zip string → Leaflet layer (circle or polygon)
  * Add a "geometry" field (GeoJSON Polygon) to show real boundary polygons.
  */
 async function loadData() {
-  const res = await fetch('./data/zipcodes.json');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const [zipRes, boundaryRes] = await Promise.all([
+    fetch('./data/zipcodes.json'),
+    fetch('./data/zip-boundaries.geojson'),
+  ]);
+  if (!zipRes.ok) throw new Error(`HTTP ${zipRes.status}`);
+  const zips = await zipRes.json();
+
+  // Merge real ZCTA boundaries into zip objects (graceful fallback to circles if unavailable)
+  if (boundaryRes.ok) {
+    const gj = await boundaryRes.json();
+    const geomMap = {};
+    gj.features.forEach(f => {
+      if (f.properties && f.properties.ZCTA5) geomMap[f.properties.ZCTA5] = f.geometry;
+    });
+    zips.forEach(z => { if (geomMap[z.zip]) z.geometry = geomMap[z.zip]; });
+  }
+
+  return zips;
 }
 
 loadData()
@@ -211,26 +226,28 @@ function rebuildMapLayers(maxPct) {
  *   3. This function will automatically switch to polygon rendering.
  */
 function renderMarker(z, maxPct) {
-  const color  = colorForPct(z.currentPct, maxPct);
-  const popup  = buildPopup(z);
+  const color = colorForPct(z.currentPct, maxPct);
+  const popup = buildPopup(z);
   let layer;
 
-  if (z.geometry && z.geometry.type === 'Polygon') {
-    // ---- POLYGON rendering (real boundary data) ----
-    // GeoJSON uses [lng, lat]; Leaflet expects [lat, lng] — swap coordinates
-    const latLngs = z.geometry.coordinates[0].map(([lng, lat]) => [lat, lng]);
-    layer = L.polygon(latLngs, {
-      color:       '#0E0D0C',
-      weight:      1,
-      fillColor:   color,
-      fillOpacity: 0.7,
-    }).bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.95 })
-      .bindPopup(popup);
+  if (z.geometry) {
+    // ---- POLYGON / MULTIPOLYGON rendering (real ZCTA boundary data) ----
+    // L.geoJSON handles both Polygon and MultiPolygon natively
+    layer = L.geoJSON({ type: 'Feature', geometry: z.geometry, properties: {} }, {
+      style: () => ({
+        color:       '#1E293B',
+        weight:      1,
+        fillColor:   color,
+        fillOpacity: 0.70,
+      }),
+    });
+    layer.bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.95 });
+    layer.bindPopup(popup);
   } else {
-    // ---- CIRCLE MARKER rendering (centroid point, no boundary data) ----
+    // ---- CIRCLE MARKER fallback (no boundary data) ----
     const radius = markerRadius(z.currentPct, maxPct);
     layer = L.circleMarker([z.lat, z.lng], {
-      radius:      radius,
+      radius,
       fillColor:   color,
       color:       '#FFFFFF',
       weight:      1.5,
@@ -239,7 +256,6 @@ function renderMarker(z, maxPct) {
       .bindPopup(popup);
   }
 
-  // Click: select this ZIP (highlight map + scroll list)
   layer.on('click', () => selectZip(z.zip, false));
   layer.addTo(map);
   layers[z.zip] = layer;
@@ -262,17 +278,16 @@ function buildPopup(z) {
 function selectZip(zip, flyToMarker) {
   selectedZip = zip;
 
-  // Highlight the map layer
+  // Highlight the map layer — style differs between polygon and circle layers
   Object.entries(layers).forEach(([z, layer]) => {
     const isSelected = z === zip;
-    if (layer.setStyle) {
-      layer.setStyle({
-        weight:      isSelected ? 3 : 1.5,
-        color:       isSelected ? '#06D6A0' : '#FFFFFF',
-        fillOpacity: isSelected ? 0.92 : 0.82,
-      });
-      if (isSelected && layer.bringToFront) layer.bringToFront();
-    }
+    if (!layer.setStyle) return;
+    const isPolygon = !!(allZips.find(d => d.zip === z) || {}).geometry;
+    layer.setStyle(isSelected
+      ? { weight: isPolygon ? 2.5 : 3,   color: '#06D6A0', fillOpacity: isPolygon ? 0.88 : 0.92 }
+      : { weight: isPolygon ? 1   : 1.5, color: isPolygon ? '#1E293B' : '#FFFFFF', fillOpacity: isPolygon ? 0.70 : 0.82 }
+    );
+    if (isSelected && layer.bringToFront) layer.bringToFront();
   });
 
   // Fly map to the selected ZIP when triggered from the list
