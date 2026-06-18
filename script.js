@@ -250,8 +250,8 @@ function rebuildMapLayers(maxPct) {
         const zip = f.properties.zip;
         const z   = polyZips.find(d => d.zip === zip);
         layers[zip] = fl;
-        fl.on('mouseover', () => { if (selectedZip !== zip) fl.setStyle({ fillOpacity: 0.55 }); });
-        fl.on('mouseout',  () => { if (selectedZip !== zip) fl.setStyle({ fillOpacity: 0 }); });
+        fl.on('mouseover', () => { if (selectedZip !== zip && !multiSelected.has(zip)) fl.setStyle({ fillOpacity: 0.55 }); });
+        fl.on('mouseout',  () => { if (selectedZip !== zip && !multiSelected.has(zip)) fl.setStyle({ fillOpacity: 0 }); });
         fl.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
           if (multiSelectMode) toggleMultiSelectedZip(zip);
@@ -349,7 +349,7 @@ function toggleMultiSelectedZip(zip) {
     multiSelected.add(zip);
     if (layer && layer.setStyle) {
       layer.setStyle(isPolygon
-        ? { weight: 2.5, color: '#06D6A0', fillOpacity: 0.65 }
+        ? { weight: 2.5, color: '#06D6A0', fillOpacity: 0.55 }
         : { weight: 3,   color: '#06D6A0', fillOpacity: 0.92 });
       if (layer.bringToFront) layer.bringToFront();
     }
