@@ -139,6 +139,9 @@ function initMap() {
     maxZoom: 19,
   }).addTo(map);
 
+  // Click on empty map area → deselect current ZIP
+  map.on('click', () => deselectZip());
+
   // Downtown Nashville pin
   L.marker(NASHVILLE_CENTER, {
     icon: L.divIcon({
@@ -232,7 +235,10 @@ function rebuildMapLayers(maxPct) {
         layers[zip] = fl;
         fl.on('mouseover', () => { if (selectedZip !== zip) fl.setStyle({ fillOpacity: 0.55 }); });
         fl.on('mouseout',  () => { if (selectedZip !== zip) fl.setStyle({ fillOpacity: 0 }); });
-        fl.on('click', () => selectZip(zip, false));
+        fl.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          if (selectedZip === zip) deselectZip(); else selectZip(zip, false);
+        });
         fl.bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.95 });
         fl.bindPopup(buildPopup(z));
       },
@@ -249,7 +255,10 @@ function rebuildMapLayers(maxPct) {
       fillOpacity: 0.82,
     }).bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.97 })
       .bindPopup(buildPopup(z));
-    layer.on('click', () => selectZip(z.zip, false));
+    layer.on('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (selectedZip === z.zip) deselectZip(); else selectZip(z.zip, false);
+    });
     layer.addTo(map);
     layers[z.zip] = layer;
   });
@@ -266,6 +275,23 @@ function buildPopup(z) {
           <div class="popup-row"><span>Population</span><b>${fmt(z.population)}</b></div>
           <div class="popup-row"><span>Share of region</span><b>${z.currentPct.toFixed(2)}%</b></div>
           <div class="popup-row"><span>Distance from downtown</span><b>${z.distanceMiles} mi</b></div>`;
+}
+
+// ---- Deselect: clear highlight and reset all layer styles ----
+function deselectZip() {
+  if (!selectedZip) return;
+  selectedZip = null;
+  map.closePopup();
+  Object.entries(layers).forEach(([z, layer]) => {
+    if (!layer.setStyle) return;
+    const isPolygon = !!(allZips.find(d => d.zip === z) || {}).geometry;
+    layer.setStyle(
+      isPolygon
+        ? { weight: 1,   color: '#1A4DFF', fillOpacity: 0 }
+        : { weight: 1.5, color: '#FFFFFF',  fillOpacity: 0.82 }
+    );
+  });
+  document.querySelectorAll('#tbody tr').forEach(tr => tr.classList.remove('active'));
 }
 
 // ---- Selection: sync map highlight + list row ----
@@ -351,8 +377,10 @@ function renderTable() {
       </td>
     `;
 
-    // Click list row → fly map to that ZIP
-    tr.addEventListener('click', () => selectZip(z.zip, true));
+    // Click list row → fly to ZIP, or deselect if already selected
+    tr.addEventListener('click', () => {
+      if (selectedZip === z.zip) deselectZip(); else selectZip(z.zip, true);
+    });
     tbody.appendChild(tr);
   });
 
