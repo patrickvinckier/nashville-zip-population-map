@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nashville ZIP Code Population Map</title>
+
+  <!-- Inter font (closest web equivalent to Avenir from MyRide brand guide) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" />
+  <!-- Leaflet CSS for the map -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ===== SITE HEADER ===== -->
+  <header class="site-header">
+    <div class="header-inner">
+      <p class="eyebrow">MyRide &middot; Market Intelligence</p>
+      <h1>Nashville ZIP Code <em>Population Map</em></h1>
+      <p class="sub">Population distribution across ZIP codes within the Nashville metro area &mdash; Census-derived data for market analysis.</p>
+    </div>
+  </header>
+
+  <!-- ===== CONTROLS BAR — stats + radius filter ===== -->
+  <div class="controls-bar">
+    <!-- Summary stat boxes (update dynamically when radius changes) -->
+    <div class="stats-row">
+      <div class="stat-box">
+        <span class="stat-num" id="stat-radius">30</span>
+        <span class="stat-lbl">Mile Radius</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-num" id="stat-count">&mdash;</span>
+        <span class="stat-lbl">ZIP Codes</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-num" id="stat-pop">&mdash;</span>
+        <span class="stat-lbl">Total Population</span>
+      </div>
+    </div>
+
+    <!-- Radius filter buttons -->
+    <div class="filter-row">
+      <span class="filter-label">Radius from downtown:</span>
+      <div class="radius-btns" id="radius-btns">
+        <button class="radius-btn" data-miles="10">10 mi</button>
+        <button class="radius-btn" data-miles="15">15 mi</button>
+        <button class="radius-btn" data-miles="20">20 mi</button>
+        <button class="radius-btn" data-miles="25">25 mi</button>
+        <button class="radius-btn active" data-miles="30">30 mi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MAIN CONTENT — map + list side by side ===== -->
+  <main class="main-content">
+
+    <!-- MAP SECTION -->
+    <section class="map-section" aria-label="ZIP code map">
+      <div id="map"></div>
+
+      <!-- Legend overlaid on the map -->
+      <div class="map-legend">
+        <div class="legend-title">Population Share</div>
+        <div class="legend-gradient">
+          <span class="legend-lo">Low</span>
+          <div class="legend-bar"></div>
+          <span class="legend-hi">High</span>
+        </div>
+        <p class="legend-note">Circle size &amp; color = share of regional population.<br>
+          <!-- NOTE FOR DEVELOPERS: When real GeoJSON boundary polygons are available,
+               the app will render filled polygon shapes instead of circles.
+               See script.js → renderMarker() and data/zipcodes.json → "geometry" field. -->
+          Polygons shown when boundary data is loaded.
+        </p>
+      </div>
+    </section>
+
+    <!-- LIST SECTION -->
+    <section class="list-section" aria-label="ZIP code data table">
+      <!-- Search bar -->
+      <div class="list-toolbar">
+        <input
+          type="text"
+          id="search"
+          placeholder="Search ZIP, city, or county&hellip;"
+          autocomplete="off"
+          aria-label="Search ZIP codes"
+        />
+        <span class="search-count" id="search-count"></span>
+      </div>
+
+      <!-- Scrollable table -->
+      <div class="table-wrap" id="table-wrap">
+        <table aria-label="Nashville ZIP code population data">
+          <thead>
+            <tr>
+              <th data-key="zip" scope="col">ZIP <span class="arrow"></span></th>
+              <th data-key="city" scope="col">City <span class="arrow"></span></th>
+              <th data-key="county" scope="col">County <span class="arrow"></span></th>
+              <th data-key="distanceMiles" scope="col">Mi <span class="arrow"></span></th>
+              <th data-key="population" scope="col">Population <span class="arrow"></span></th>
+              <th data-key="currentPct" scope="col">% Share <span class="arrow"></span></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Footer note inside list panel -->
+      <div class="list-footer">
+        Source: Census-derived ZIP-level population data &middot; Distance = straight-line from downtown Nashville (36.1627°N, 86.7816°W) &middot; Click any row or map marker to sync selection
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Leaflet JS for the map -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
