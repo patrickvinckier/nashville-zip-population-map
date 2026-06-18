@@ -57,8 +57,9 @@ let maxRadius   = DEFAULT_RADIUS;
 
 // ---- Leaflet map & layer registry ----
 let map;
-let radiusCircle;  // the dashed boundary ring on the map
-const layers = {}; // zip string → Leaflet layer (circle or polygon)
+let radiusCircle;    // the dashed boundary ring on the map
+let zipPolygonLayer; // single L.geoJSON for ALL polygon ZIPs (clean shared borders)
+const layers = {};   // zip string → individual Leaflet layer (for select/style)
 
 // ---- Boot: fetch data, then initialize ----
 
@@ -184,7 +185,8 @@ function applyRadius(miles) {
 
 // ---- Map: remove old layers, draw new ones ----
 function rebuildMapLayers(maxPct) {
-  // Remove all existing ZIP layers
+  // Remove previous polygon group and any circle marker fallbacks
+  if (zipPolygonLayer) { map.removeLayer(zipPolygonLayer); zipPolygonLayer = null; }
   Object.values(layers).forEach(layer => map.removeLayer(layer));
   Object.keys(layers).forEach(k => delete layers[k]);
 
@@ -204,68 +206,53 @@ function rebuildMapLayers(maxPct) {
     }).addTo(map);
   }
 
-  // Draw each filtered ZIP code
-  filtered.forEach(z => {
-    renderMarker(z, maxPct);
-  });
-}
-
-/**
- * RENDER MARKER — circle marker or polygon
- *
- * Currently uses proportional circle markers because boundary GeoJSON
- * is not yet available. When real polygon boundaries are added to the
- * "geometry" field in data/zipcodes.json, this function will render
- * filled L.polygon shapes instead.
- *
- * TO ADD REAL BOUNDARIES:
- *   1. Obtain ZCTA GeoJSON from the US Census TIGER/Line files
- *      (https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html)
- *   2. For each ZIP in zipcodes.json, set "geometry" to the GeoJSON
- *      Polygon object (the "geometry" property of the matching Feature).
- *   3. This function will automatically switch to polygon rendering.
- */
-function renderMarker(z, maxPct) {
-  const color = colorForPct(z.currentPct, maxPct);
-  const popup = buildPopup(z);
-  let layer;
-
-  if (z.geometry) {
-    // ---- POLYGON / MULTIPOLYGON rendering (real ZCTA boundary data) ----
-    layer = L.geoJSON({ type: 'Feature', geometry: z.geometry, properties: {} }, {
-      style: () => ({
-        color:       '#1A4DFF',
-        weight:      1.5,
-        fillColor:   color,
-        fillOpacity: 0,        // transparent by default; fills on hover
-      }),
-      onEachFeature: (_, featureLayer) => {
-        featureLayer.on('mouseover', () => {
-          if (selectedZip !== z.zip) layer.setStyle({ fillOpacity: 0.55 });
-        });
-        featureLayer.on('mouseout', () => {
-          if (selectedZip !== z.zip) layer.setStyle({ fillOpacity: 0 });
-        });
+  // ---- All polygon ZIPs in ONE geoJSON layer ----
+  // Rendering every feature inside a single layer means adjacent ZIP borders
+  // share the same SVG path group — each border line is drawn exactly once,
+  // eliminating the double-stroke artifact where ZIPs meet.
+  const polyZips = filtered.filter(z => z.geometry);
+  if (polyZips.length) {
+    const fc = {
+      type: 'FeatureCollection',
+      features: polyZips.map(z => ({
+        type: 'Feature',
+        geometry: z.geometry,
+        properties: { zip: z.zip },
+      })),
+    };
+    zipPolygonLayer = L.geoJSON(fc, {
+      smoothFactor: 0,
+      style: f => {
+        const z = polyZips.find(d => d.zip === f.properties.zip);
+        return { color: '#1A4DFF', weight: 1, fillColor: colorForPct(z.currentPct, maxPct), fillOpacity: 0 };
       },
-    });
-    layer.bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.95 });
-    layer.bindPopup(popup);
-  } else {
-    // ---- CIRCLE MARKER fallback (no boundary data) ----
-    const radius = markerRadius(z.currentPct, maxPct);
-    layer = L.circleMarker([z.lat, z.lng], {
-      radius,
-      fillColor:   color,
+      onEachFeature: (f, fl) => {
+        const zip = f.properties.zip;
+        const z   = polyZips.find(d => d.zip === zip);
+        layers[zip] = fl;
+        fl.on('mouseover', () => { if (selectedZip !== zip) fl.setStyle({ fillOpacity: 0.55 }); });
+        fl.on('mouseout',  () => { if (selectedZip !== zip) fl.setStyle({ fillOpacity: 0 }); });
+        fl.on('click', () => selectZip(zip, false));
+        fl.bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.95 });
+        fl.bindPopup(buildPopup(z));
+      },
+    }).addTo(map);
+  }
+
+  // ---- Circle marker fallback for any ZIP without boundary geometry ----
+  filtered.filter(z => !z.geometry).forEach(z => {
+    const layer = L.circleMarker([z.lat, z.lng], {
+      radius:      markerRadius(z.currentPct, maxPct),
+      fillColor:   colorForPct(z.currentPct, maxPct),
       color:       '#FFFFFF',
       weight:      1.5,
       fillOpacity: 0.82,
     }).bindTooltip(tooltipContent(z), { sticky: true, opacity: 0.97 })
-      .bindPopup(popup);
-  }
-
-  layer.on('click', () => selectZip(z.zip, false));
-  layer.addTo(map);
-  layers[z.zip] = layer;
+      .bindPopup(buildPopup(z));
+    layer.on('click', () => selectZip(z.zip, false));
+    layer.addTo(map);
+    layers[z.zip] = layer;
+  });
 }
 
 function tooltipContent(z) {
@@ -292,7 +279,7 @@ function selectZip(zip, flyToMarker) {
     const isPolygon = !!(allZips.find(d => d.zip === z) || {}).geometry;
     layer.setStyle(isSelected
       ? { weight: isPolygon ? 2.5 : 3,   color: '#06D6A0', fillOpacity: isPolygon ? 0.65 : 0.92 }
-      : { weight: isPolygon ? 1.5 : 1.5, color: isPolygon ? '#1A4DFF' : '#FFFFFF', fillOpacity: isPolygon ? 0    : 0.82 }
+      : { weight: isPolygon ? 1   : 1.5, color: isPolygon ? '#1A4DFF' : '#FFFFFF', fillOpacity: isPolygon ? 0    : 0.82 }
     );
     if (isSelected && layer.bringToFront) layer.bringToFront();
   });
