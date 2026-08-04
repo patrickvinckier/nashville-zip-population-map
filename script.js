@@ -193,11 +193,15 @@ function applyRadius(miles) {
   const maxPct = filtered.length ? Math.max(...filtered.map(z => z.currentPct)) : 0;
 
   // Update summary stats
-  document.getElementById('stat-radius').textContent = miles;
-  document.getElementById('stat-count').textContent  = filtered.length;
-  document.getElementById('stat-pop').textContent    = totalPop >= 1000000
+  const totalAllstate = filtered.reduce((s, z) => s + (z.allstateCount || 0), 0);
+  document.getElementById('stat-radius').textContent   = miles;
+  document.getElementById('stat-count').textContent    = filtered.length;
+  document.getElementById('stat-count-lbl').textContent = 'ZIP Codes';
+  document.getElementById('stat-pop').textContent      = totalPop >= 1000000
     ? (totalPop / 1000000).toFixed(2) + 'M'
     : fmt(totalPop);
+  document.getElementById('stat-allstate').textContent = fmt(totalAllstate);
+  document.getElementById('stat-allstate-lbl').textContent = 'Allstate Customers';
 
   rebuildMapLayers(maxPct);
   renderTable();
@@ -357,12 +361,15 @@ function toggleMultiSelectedZip(zip) {
 
   // Update stats and table to reflect current selection
   const selZips = filtered.filter(z => multiSelected.has(z.zip));
-  const totalPop = selZips.reduce((s, z) => s + z.population, 0);
-  document.getElementById('stat-count').textContent = multiSelected.size || '—';
+  const totalPop      = selZips.reduce((s, z) => s + z.population, 0);
+  const totalAllstate = selZips.reduce((s, z) => s + (z.allstateCount || 0), 0);
+  document.getElementById('stat-count').textContent     = multiSelected.size || '—';
   document.getElementById('stat-count-lbl').textContent = multiSelected.size ? 'Selected' : 'ZIP Codes';
-  document.getElementById('stat-pop').textContent = multiSelected.size
+  document.getElementById('stat-pop').textContent       = multiSelected.size
     ? (totalPop >= 1_000_000 ? (totalPop / 1_000_000).toFixed(2) + 'M' : fmt(totalPop))
     : '—';
+  document.getElementById('stat-allstate').textContent     = multiSelected.size ? fmt(totalAllstate) : '—';
+  document.getElementById('stat-allstate-lbl').textContent = multiSelected.size ? 'Allstate Selected' : 'Allstate Customers';
   renderTable();
 }
 
@@ -455,6 +462,7 @@ function renderTable() {
       <td>${z.county}</td>
       <td class="col-dist">${z.distanceMiles}</td>
       <td class="col-pop">${fmt(z.population)}</td>
+      <td class="col-allstate">${fmt(z.allstateCount || 0)}</td>
       <td class="col-pct">
         <span class="pct-wrap">
           ${displayPct.toFixed(2)}%
