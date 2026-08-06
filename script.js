@@ -60,6 +60,7 @@ let map;
 let radiusCircle;    // the dashed boundary ring on the map
 let zipPolygonLayer; // single L.geoJSON for ALL polygon ZIPs (clean shared borders)
 const layers = {};   // zip string → individual Leaflet layer (for select/style)
+let agentMarkerLayer; // L.layerGroup for Allstate agent pins
 
 // ---- Multi-select mode ----
 let multiSelectMode = false;
@@ -79,9 +80,10 @@ let multiSelected   = new Set(); // zip strings currently selected in multi-sele
  * Add a "geometry" field (GeoJSON Polygon) to show real boundary polygons.
  */
 async function loadData() {
-  const [zipRes, boundaryRes] = await Promise.all([
+  const [zipRes, boundaryRes, agentRes] = await Promise.all([
     fetch('./data/zipcodes.json'),
     fetch('./data/zip-boundaries.geojson'),
+    fetch('./data/agents.json'),
   ]);
   if (!zipRes.ok) throw new Error(`HTTP ${zipRes.status}`);
   const zips = await zipRes.json();
@@ -96,15 +98,15 @@ async function loadData() {
     zips.forEach(z => { if (geomMap[z.zip]) z.geometry = geomMap[z.zip]; });
   }
 
-  return zips;
+  const agents = agentRes.ok ? await agentRes.json() : [];
+  return { zips, agents };
 }
 
 loadData()
-  .then(data => {
-    // Filter out rows with no population — they don't add to the map story
-    // Remove this filter if you want all ZIP codes regardless of population
-    allZips = data.filter(z => z.population > 0);
+  .then(({ zips, agents }) => {
+    allZips = zips.filter(z => z.population > 0);
     initMap();
+    addAgentMarkers(agents);
     applyRadius(DEFAULT_RADIUS);
   })
   .catch(err => {
@@ -128,6 +130,47 @@ loadData()
     `;
   });
 
+// ---- Allstate agent pins ----
+function addAgentMarkers(agents) {
+  if (agentMarkerLayer) { map.removeLayer(agentMarkerLayer); }
+  agentMarkerLayer = L.layerGroup();
+
+  agents.forEach(a => {
+    if (!a.lat || !a.lng) return;
+
+    const marker = L.circleMarker([a.lat, a.lng], {
+      radius:      7,
+      color:       '#fff',
+      weight:      2,
+      fillColor:   '#E8320A',
+      fillOpacity: 0.92,
+      pane:        'agentPane',
+    });
+
+    const sourceLink = a.source
+      ? `<a href="https://${a.source}" target="_blank" rel="noopener" style="color:#1A4DFF;font-size:11px;">View on agents.allstate.com</a>`
+      : '';
+    const phoneRow = a.phone
+      ? `<div style="margin-top:4px;font-size:12px;color:#555;">${a.phone}</div>`
+      : '';
+
+    marker.bindPopup(`
+      <div style="min-width:200px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#E8320A;margin-bottom:4px;">Allstate Agent</div>
+        <div style="font-size:14px;font-weight:700;color:#111;line-height:1.3;">${a.name}</div>
+        <div style="margin-top:6px;font-size:12px;color:#444;">${a.street}</div>
+        <div style="font-size:12px;color:#444;">${a.cityState} ${a.zip}</div>
+        ${phoneRow}
+        ${sourceLink ? `<div style="margin-top:8px;">${sourceLink}</div>` : ''}
+      </div>
+    `, { maxWidth: 260 });
+
+    marker.addTo(agentMarkerLayer);
+  });
+
+  agentMarkerLayer.addTo(map);
+}
+
 // ---- Map initialization ----
 function initMap() {
   map = L.map('map', {
@@ -135,6 +178,10 @@ function initMap() {
     zoom:   MAP_ZOOM,
     scrollWheelZoom: true,
   });
+
+  // Custom pane for agent pins so they always sit above ZIP polygons
+  map.createPane('agentPane');
+  map.getPane('agentPane').style.zIndex = 650;
 
   // CartoDB Voyager — clean light basemap, professional for client presentations
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
