@@ -254,6 +254,44 @@ html, body {
   box-shadow: 0 3px 14px rgba(26,77,255,0.4);
 }
 
+/* View-mode toggle (Original / New) */
+.view-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(26,77,255,0.18);
+  border: 2px solid var(--cobalt);
+}
+.view-toggle-btn {
+  background: var(--white);
+  border: none;
+  color: var(--cobalt);
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.view-toggle-btn:first-child { border-right: 1px solid var(--cobalt); }
+.view-toggle-btn.active {
+  background: var(--cobalt);
+  color: var(--white);
+}
+.view-toggle-btn:hover:not(.active) {
+  background: var(--sky);
+}
+/* New-mode badge on stat label */
+.stat-lbl.new-badge::after {
+  content: ' ★';
+  font-size: 9px;
+  color: var(--cobalt-light);
+}
+
 /* Map legend */
 .map-legend {
   position: absolute;

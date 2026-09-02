@@ -66,6 +66,10 @@ let agentMarkerLayer; // L.layerGroup for Allstate agent pins
 let multiSelectMode = false;
 let multiSelected   = new Set(); // zip strings currently selected in multi-select mode
 
+// ---- View mode: 'original' or 'new' ----
+let viewMode = 'original'; // 'original' = Nashville_Zip_Customer_Counts data; 'new' = TEST group data
+let newModeAgentLayer; // L.layerGroup for ZIP-centroid agent dots in new mode
+
 // ---- Boot: fetch data, then initialize ----
 
 /**
@@ -130,6 +134,80 @@ loadData()
     `;
   });
 
+// ---- View mode switch ----
+function setViewMode(mode) {
+  if (mode === viewMode) return;
+  viewMode = mode;
+
+  // Update toggle button states
+  document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+
+  // Update table headers for new vs original
+  const thAllstate = document.querySelector('thead th[data-key="allstateCount"]');
+  if (thAllstate) thAllstate.firstChild.textContent = mode === 'new' ? 'TEST Cnt ' : 'Allstate ';
+  const thAgents = document.getElementById('th-agents');
+  if (thAgents) thAgents.style.display = mode === 'new' ? '' : 'none';
+
+  // If switching to new mode, exit multi-select (keeps things simple)
+  if (multiSelectMode) toggleMultiSelect();
+
+  applyRadius(maxRadius);
+}
+
+// ---- Agent layer: show geocoded pins (original) or ZIP-centroid dots (new) ----
+function updateAgentLayer() {
+  if (viewMode === 'original') {
+    // Show geocoded address pins, hide new-mode dots
+    if (agentMarkerLayer) agentMarkerLayer.addTo(map);
+    if (newModeAgentLayer) map.removeLayer(newModeAgentLayer);
+  } else {
+    // Hide geocoded pins, show ZIP-centroid scatter dots
+    if (agentMarkerLayer) map.removeLayer(agentMarkerLayer);
+    addNewModeAgentDots();
+  }
+}
+
+// Scatter N points around a center lat/lng in a small circle
+function scatterCoords(lat, lng, n, idx) {
+  if (n === 1) return [lat, lng];
+  const radius  = 0.006; // ~600m
+  const angle   = (idx / n) * 2 * Math.PI;
+  return [lat + radius * Math.sin(angle), lng + radius * Math.cos(angle)];
+}
+
+function addNewModeAgentDots() {
+  if (newModeAgentLayer) map.removeLayer(newModeAgentLayer);
+  newModeAgentLayer = L.layerGroup();
+
+  filtered.forEach(z => {
+    const agents = z.testAgents || [];
+    if (!agents.length) return;
+    agents.forEach((name, idx) => {
+      const [lat, lng] = scatterCoords(z.lat, z.lng, agents.length, idx);
+      const dot = L.circleMarker([lat, lng], {
+        radius:      7,
+        color:       '#fff',
+        weight:      2,
+        fillColor:   '#E8320A',
+        fillOpacity: 0.92,
+        pane:        'agentPane',
+      });
+      dot.bindPopup(`
+        <div style="min-width:180px;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#E8320A;margin-bottom:4px;">Allstate Agent</div>
+          <div style="font-size:14px;font-weight:700;color:#111;line-height:1.3;">${name}</div>
+          <div style="margin-top:6px;font-size:12px;color:#444;">ZIP ${z.zip} — ${z.city}</div>
+        </div>
+      `, { maxWidth: 240 });
+      dot.addTo(newModeAgentLayer);
+    });
+  });
+
+  newModeAgentLayer.addTo(map);
+}
+
 // ---- Allstate agent pins ----
 function addAgentMarkers(agents) {
   if (agentMarkerLayer) { map.removeLayer(agentMarkerLayer); }
@@ -193,6 +271,22 @@ function initMap() {
   // Click on empty map area → deselect (ignored in multi-select mode)
   map.on('click', () => { if (!multiSelectMode) deselectZip(); });
 
+  // View-mode toggle (Original / New) — topright, above Select Multiple
+  const vmControl = L.control({ position: 'topright' });
+  vmControl.onAdd = () => {
+    const wrap = L.DomUtil.create('div', 'view-toggle');
+    wrap.id = 'view-toggle';
+    ['original','new'].forEach(mode => {
+      const btn = L.DomUtil.create('button', 'view-toggle-btn' + (mode === viewMode ? ' active' : ''), wrap);
+      btn.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+      btn.dataset.mode = mode;
+      L.DomEvent.disableClickPropagation(btn);
+      btn.addEventListener('click', () => setViewMode(mode));
+    });
+    return wrap;
+  };
+  vmControl.addTo(map);
+
   // "Select Multiple" floating button (top-right of map)
   const msControl = L.control({ position: 'topright' });
   msControl.onAdd = () => {
@@ -239,18 +333,20 @@ function applyRadius(miles) {
   });
   const maxPct = filtered.length ? Math.max(...filtered.map(z => z.currentPct)) : 0;
 
-  // Update summary stats
-  const totalAllstate = filtered.reduce((s, z) => s + (z.allstateCount || 0), 0);
-  document.getElementById('stat-radius').textContent   = miles;
-  document.getElementById('stat-count').textContent    = filtered.length;
+  // Update summary stats (use correct dataset for current view mode)
+  const allstateKey   = viewMode === 'new' ? 'testAllstateCount' : 'allstateCount';
+  const totalAllstate = filtered.reduce((s, z) => s + (z[allstateKey] || 0), 0);
+  document.getElementById('stat-radius').textContent    = miles;
+  document.getElementById('stat-count').textContent     = filtered.length;
   document.getElementById('stat-count-lbl').textContent = 'ZIP Codes';
-  document.getElementById('stat-pop').textContent      = totalPop >= 1000000
+  document.getElementById('stat-pop').textContent       = totalPop >= 1000000
     ? (totalPop / 1000000).toFixed(2) + 'M'
     : fmt(totalPop);
-  document.getElementById('stat-allstate').textContent = fmt(totalAllstate);
-  document.getElementById('stat-allstate-lbl').textContent = 'Allstate Customers';
+  document.getElementById('stat-allstate').textContent     = fmt(totalAllstate);
+  document.getElementById('stat-allstate-lbl').textContent = viewMode === 'new' ? 'TEST Customers' : 'Allstate Customers';
 
   rebuildMapLayers(maxPct);
+  updateAgentLayer();
   renderTable();
 }
 
@@ -407,9 +503,10 @@ function toggleMultiSelectedZip(zip) {
   }
 
   // Update stats and table to reflect current selection
-  const selZips = filtered.filter(z => multiSelected.has(z.zip));
+  const selZips       = filtered.filter(z => multiSelected.has(z.zip));
+  const allstateKey   = viewMode === 'new' ? 'testAllstateCount' : 'allstateCount';
   const totalPop      = selZips.reduce((s, z) => s + z.population, 0);
-  const totalAllstate = selZips.reduce((s, z) => s + (z.allstateCount || 0), 0);
+  const totalAllstate = selZips.reduce((s, z) => s + (z[allstateKey] || 0), 0);
   document.getElementById('stat-count').textContent     = multiSelected.size || '—';
   document.getElementById('stat-count-lbl').textContent = multiSelected.size ? 'Selected' : 'ZIP Codes';
   document.getElementById('stat-pop').textContent       = multiSelected.size
@@ -503,13 +600,18 @@ function renderTable() {
     if (multiSelectMode ? multiSelected.has(z.zip) : z.zip === selectedZip) tr.classList.add('active');
 
     const barPct = ((displayPct / maxRowPct) * 100).toFixed(0);
+    const allstateKey = viewMode === 'new' ? 'testAllstateCount' : 'allstateCount';
+    const agentsCell  = viewMode === 'new'
+      ? `<td class="col-agents" style="font-size:11px;color:#555;max-width:140px;">${(z.testAgents||[]).join(', ') || '—'}</td>`
+      : '';
     tr.innerHTML = `
       <td class="col-zip">${z.zip}</td>
       <td>${z.city}</td>
       <td>${z.county}</td>
       <td class="col-dist">${z.distanceMiles}</td>
       <td class="col-pop">${fmt(z.population)}</td>
-      <td class="col-allstate">${fmt(z.allstateCount || 0)}</td>
+      <td class="col-allstate">${fmt(z[allstateKey] || 0)}</td>
+      ${agentsCell}
       <td class="col-pct">
         <span class="pct-wrap">
           ${displayPct.toFixed(2)}%
@@ -527,16 +629,13 @@ function renderTable() {
     tbody.appendChild(tr);
   });
 
-  // Update sort arrows on column headers
-  document.querySelectorAll('thead th').forEach(th => {
+  // Update sort arrows on column headers (only headers with data-key have an .arrow span)
+  document.querySelectorAll('thead th[data-key]').forEach(th => {
     const key = th.dataset.key;
     th.classList.toggle('sorted', key === sortKey);
     const arrow = th.querySelector('.arrow');
-    if (key === sortKey) {
-      arrow.textContent = sortDir === 1 ? '▲' : '▼';
-    } else {
-      arrow.textContent = '';
-    }
+    if (!arrow) return;
+    arrow.textContent = key === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
   });
 }
 
