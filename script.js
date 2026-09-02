@@ -433,14 +433,21 @@ function rebuildMapLayers(maxPct) {
 }
 
 function tooltipContent(z) {
+  const extra = viewMode === 'new'
+    ? ` &nbsp;|&nbsp; TEST: <strong>${fmt(z.testAllstateCount || 0)}</strong>`
+    : '';
   return `<strong>${z.zip}</strong> — ${z.city}<br>
-          Pop: <strong>${fmt(z.population)}</strong> &nbsp;|&nbsp; ${z.currentPct.toFixed(2)}% of region`;
+          Pop: <strong>${fmt(z.population)}</strong>${extra} &nbsp;|&nbsp; ${z.currentPct.toFixed(2)}% of region`;
 }
 
 function buildPopup(z) {
+  const testRow = viewMode === 'new'
+    ? `<div class="popup-row"><span>TEST Customers</span><b>${fmt(z.testAllstateCount || 0)}</b></div>`
+    : '';
   return `<div class="popup-zip">${z.zip}</div>
           <div class="popup-city">${z.city}, ${z.state} &middot; ${z.county} County</div>
           <div class="popup-row"><span>Population</span><b>${fmt(z.population)}</b></div>
+          ${testRow}
           <div class="popup-row"><span>Share of region</span><b>${z.currentPct.toFixed(2)}%</b></div>
           <div class="popup-row"><span>Distance from downtown</span><b>${z.distanceMiles} mi</b></div>`;
 }
