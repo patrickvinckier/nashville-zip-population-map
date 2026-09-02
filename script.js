@@ -85,7 +85,7 @@ let newModeAgentLayer; // L.layerGroup for ZIP-centroid agent dots in new mode
  */
 async function loadData() {
   const [zipRes, boundaryRes, agentRes] = await Promise.all([
-    fetch('./data/zipcodes.json'),
+    fetch('./data/zipcodes.json?v=2'),
     fetch('./data/zip-boundaries.geojson'),
     fetch('./data/agents.json'),
   ]);
